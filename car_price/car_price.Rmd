@@ -63,7 +63,7 @@ library(knitr)
 **Load data**\
 From kaggle "100,000 UK Used Car Data set".
 
-```{r, echo=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 unzip("cars.zip")
 
 audi <- fread("audi.csv")
