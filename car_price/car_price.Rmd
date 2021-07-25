@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.align = 'center', cache=FALSE,
 
 \vspace{6cm}
 
-> N.b : All plots are built with theme_minimal to reduce ink when printing.
+> N.B : All plots are built with theme_minimal to reduce ink when printing.
 
 \newpage
 
@@ -64,7 +64,54 @@ library(knitr)
 From kaggle "100,000 UK Used Car Data set".
 
 ```{r, echo=FALSE}
-cars <- fread("cars.csv")
+unzip("cars.zip")
+
+audi <- fread("audi.csv")
+audi <- audi %>% add_column(.before = "model",
+                            brand = rep("audi", times = nrow(audi)))
+
+bmw <- fread("bmw.csv")
+bmw <- bmw %>% add_column(.before = "model",
+                            brand = rep("bmw", times = nrow(bmw)))
+
+mercedes <- fread("merc.csv")
+mercedes <- mercedes %>% add_column(.before = "model",
+                            brand = rep("mercedes", times = nrow(mercedes)))
+
+ford <- fread("ford.csv")
+ford <- ford %>% add_column(.before = "model",
+                            brand = rep("ford", times = nrow(ford)))
+
+hyundai <- fread("hyundi.csv")
+hyundai <- hyundai %>% add_column(.before = "model",
+                            brand = rep("hyundai", times = nrow(hyundai)))
+names(hyundai)
+# change name "tax(£) to "tax" in Hyundai
+hyundai <- rename(hyundai, tax = `tax(£)`)
+
+skoda <- fread("skoda.csv")
+skoda <- skoda %>% add_column(.before = "model",
+                            brand = rep("skoda", times = nrow(skoda)))
+
+toyota <- fread("toyota.csv")
+toyota <- toyota %>% add_column(.before = "model",
+                            brand = rep("toyota", times = nrow(toyota)))
+
+vauxhall <- fread("vauxhall.csv")
+vauxhall <- vauxhall %>% add_column(.before = "model",
+                            brand = rep("vauxhall", times = nrow(vauxhall)))
+
+vw <- fread("vw.csv")
+vw <- vw %>% add_column(.before = "model",
+                            brand = rep("vw", times = nrow(vw)))
+
+cars <- rbind(audi, bmw, mercedes, ford, hyundai, skoda, toyota, vauxhall, vw)
+fwrite(cars, file = "cars_price.csv")
+
+rm(audi, bmw, ford, hyundai, mercedes, skoda, toyota, vauxhall, vw)
+file.remove("audi.csv", "bmw.csv", "merc.csv", "ford.csv", "hyundi.csv",
+            "skoda.csv", "toyota.csv", "vauxhall.csv", "vw.csv",
+            "cclass.csv", "focus.csv", "unclean cclass.csv", "unclean focus.csv")
 ```
 
 \newpage
