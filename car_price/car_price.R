@@ -297,7 +297,7 @@ options(repr.plot.width = 10, repr.plot.height = 8)
 corrplot(cars %>% select(where(is.numeric)) %>% 
            cor(), method = "number")
 
-# data preparation ####
+# data preparation for step-by-step approch ####
 set.seed(2021, sample.kind = "Rounding")
 
 # test set will be 20% of cars data
@@ -449,7 +449,6 @@ cars <- cars %>% mutate_at(numeric_vars[numeric_vars != "price"],
                                      .funs = scale)
 rm(numeric_vars)
 
-# data preparation 2 for machine learning model ####
 set.seed(2021, sample.kind = "Rounding")
 
 # test set will be 20% of cars data
