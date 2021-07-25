@@ -1,0 +1,953 @@
+---
+title: "Capstone Project : Used car price"
+subtitle : "HarvardX : Data Science Professional Certificate"
+author: "Youssef Bougarrani"
+date: "7/23/2021"
+output:
+  pdf_document:
+    number_sections: yes
+    toc: yes
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center', cache=FALSE, 
+                      cache.lazy = FALSE)
+```
+
+\vspace{6cm}
+
+> N.b : All plots are built with theme_minimal to reduce ink when printing.
+
+\newpage
+
+# Introduction
+
+This report is the second part of capstone for HarvardX Data Science Professional Certificate. Data set is from the British used car listing about 100,000 vehicles.
+
+The goal of this analysis is to predict the price knowing other features of the car. We start by an initial exploration of data set and visualization. Then we perform machine learning models and display results.
+
+## Data description
+
+Data set is about used cars listings 100,000 cars, which have been separated into files corresponding to each car manufacturer.
+
+The cleaned data set contains information of price, transmission, mileage, fuel type, road tax, miles per gallon (mpg), and engine size.
+
+\vspace{0.5cm}
+
+## Session information
+
+```{r, echo=FALSE}
+sessionInfo()
+```
+
+\vspace{0.5cm}
+
+**Load libraries and install them if require**
+
+```{r, echo=FALSE, include=FALSE}
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(data.table)) install.packages("data.table")
+if(!require(corrplot)) install.packages("corrplot")
+if(!require(caret)) install.packages("caret")
+if(!require(xgboost)) install.packages("xgboost")
+if(!require(knitr)) install.packages("knitr")
+
+library(tidyverse)
+library(data.table)
+library(corrplot)
+library(caret)
+library(xgboost)
+library(knitr)
+```
+
+**Load data**\
+From kaggle "100,000 UK Used Car Data set".
+
+```{r, echo=FALSE}
+cars <- fread("cars.csv")
+```
+
+\newpage
+
+# Analysis
+
+## Initial data exploration and visualization
+
+**Dimension of the data set**
+
+```{r, echo=FALSE}
+dim(cars)
+```
+
+\vspace{0.5cm}
+
+**Search for duplicated rows**
+
+```{r, echo=FALSE}
+sum(duplicated(cars))
+cars <- cars %>% distinct()
+```
+
+1475 rows are duplicated.\
+Remove them.
+
+```{r, echo=FALSE}
+cars <- cars %>% distinct()
+```
+
+**Look for NAs**
+
+```{r, echo=FALSE}
+sapply(cars, function(i){
+  sum(is.na(i))
+}) %>% as.data.frame() %>% kable()
+```
+
+There are no NAs.
+
+\vspace{0.5cm}
+
+**The structure**
+
+```{r, echo=FALSE, include=TRUE}
+str(cars)
+head(cars)
+```
+
+\vspace{1cm}
+
+The price is in British Pound £.\
+mileage is in mile. And mile = 1.609 km.\
+tax is in British Pound £.\
+mpg is the "miles per gallon". And UK gallon \~ 4.5 liter.\
+engineSize is in liter.
+
+\vspace{0.5cm}
+
+**Brand**
+
+```{r, echo=FALSE, include=TRUE}
+cars %>% summarise(unique(brand)) %>% kable()
+```
+
+There are 9 brands
+
+**Distribution of brands**
+
+```{r, echo=FALSE, include=TRUE}
+cars %>% group_by(brand) %>% summarise(n = n()) %>%
+  arrange(desc(n)) %>% kable()
+```
+
+```{r, echo=FALSE}
+cars %>% group_by(brand) %>% summarise(n= n()) %>%
+  ggplot(aes(x = reorder(brand, -n), y = n, fill = brand)) +
+  geom_bar(stat = "identity") +
+  guides(fill = "none") +
+  labs(title = "From the most to the least popular brand", x = "") +
+  theme_minimal()
+```
+
+**Total of model**
+
+```{r, echo=FALSE}
+cars %>% summarise(unique(model)) %>% count()
+```
+
+```{r, echo=FALSE}
+model_price <- cars %>% group_by(model) %>% 
+  summarise(median(price), n = n()) %>%
+  arrange(n) %>% 
+  filter(n < 30)
+model_price %>% kable()
+rm(model_price)
+```
+
+There are 50 over 186 models with less than 30 observations per model.
+
+\newpage
+
+**Summary of year**
+
+```{r, echo=FALSE}
+summary(cars$year)
+```
+
+\vspace{1cm}
+
+**Search for non-logic value**
+
+```{r, echo=FALSE}
+cars %>% filter(year > 2021)
+```
+
+\vspace{0.5cm}
+
+There is a max value year = 2060 for a Ford Fiesta.\
+We find identical metrics for this model and change the year.
+
+```{r, echo=FALSE, include=FALSE}
+cars %>% filter(model == "Fiesta", fuelType == "Petrol", engineSize == 1.4,
+                mileage >= 54807/1.2 & mileage <= 54807*1.2,
+                year != 2060) %>% 
+  pull(year) %>% median()
+```
+
+There are 11 Ford Fiesta with roughly same metrics and median year = 2010.\
+We replace 2060 by 2010.
+
+```{r, echo=FALSE, include=FALSE}
+cars$year[cars$year == 2060] <- 2010
+```
+
+Check the range of year now :
+
+```{r, echo=FALSE}
+range(cars$year)
+```
+
+\vspace{0.5cm}
+
+**Table of year distribution**
+
+```{r, echo=FALSE}
+cars %>% group_by(year) %>% summarise(n = n()) %>%
+  kable()
+```
+
+There are 2 vehicles with year = 1970 and these models are not from this period.\
+We replace 1970 by the median.
+
+```{r, echo=FALSE, include=FALSE}
+cars %>% filter(year == 1970)
+cars %>% filter(year != 1970, model == "M Class", fuelType == "Diesel",
+                mileage <= 14000*1.5 & mileage >= 14000/1.5) %>%
+  .$year %>% median()
+
+cars$year[cars$year == 1970 & cars$model == "M Class"] <- 2015
+
+cars %>% filter(year != 1970, model == "Zafira", fuelType == "Petrol",
+                mileage <= 37357*1.2 & mileage >= 37357/1.2,
+                engineSize == 1.4, transmission == "Manual") %>%
+  .$year %>% median()
+
+cars$year[cars$year == 1970 & cars$model == "Zafira"] <- 2017
+```
+
+```{r, echo=FALSE}
+cars %>% group_by(year) %>% summarise(n = n()) %>%
+  ggplot(aes(x = year, y = n)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Year distribution") +
+  theme_minimal()
+```
+
+Only 953 cars have year \< 2010.
+
+\newpage
+
+**Summary of price**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+summary(cars$price)
+```
+
+\vspace{1cm}
+
+```{r echo=FALSE, fig.height=4, message=FALSE, warning=FALSE}
+cars %>% ggplot(aes(x = price)) +
+  geom_histogram(color = "black") +
+  theme_minimal()
+```
+
+Very few cars have price > 50,000 £
+
+```{r, echo=FALSE, include=FALSE}
+cars %>% filter(price > 50000) %>% summarise(n()) 
+```
+
+1135 cars are, it's roughly 1% of all vehicles.
+
+```{r echo=FALSE, fig.height=4}
+cars %>% filter(price < 50000) %>%
+  ggplot(aes(y = price)) +
+  geom_boxplot() +
+  theme_minimal()
+```
+
+\vspace{1cm}
+
+50% of total cars have price between 10,000 and 20,000 £.
+
+\newpage
+
+**Number of cars by transmission**
+
+```{r, echo=FALSE}
+table(cars$transmission)
+cars %>% filter(transmission == "Other") %>% kable()
+```
+
+Only 9 cars have "Other" type of transmission.
+
+\vspace{0.5cm}
+
+```{r echo=FALSE, fig.height=4}
+cars %>% group_by(transmission) %>% summarise(n = n()) %>%
+  ggplot(aes(x = reorder(transmission, -n), y = n, fill = transmission)) +
+  geom_bar(stat = "identity") +
+  guides(fill = "none") +
+  labs(title = "Transmission distribution", x = "") +
+  theme_minimal()
+```
+
+\newpage
+
+**Summary of mileage**
+
+```{r, echo=FALSE}
+summary(cars$mileage)
+```
+
+\vspace{1cm}
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+cars %>% ggplot(aes(x = mileage)) +
+  geom_area(stat = "bin") +
+  labs(title = "Mileage distribution") +
+  theme_minimal()
+```
+
+\newpage
+
+**Distribution of fuelType**
+
+```{r, echo=FALSE}
+table(cars$fuelType) %>% kable()
+
+cars %>% group_by(fuelType) %>% summarise(n = n()) %>%
+  ggplot(aes(x = reorder(fuelType, -n), y = n, fill = fuelType)) +
+  geom_bar(stat = "identity") +
+  guides(fill = "none") +
+  labs(title = "Fuel type", x = "") +
+  theme_minimal()
+```
+
+\newpage
+
+**Summary of tax and total number of cars with small tax category**
+
+```{r, echo=FALSE}
+summary(cars$tax)
+table(cars$tax) %>% head() %>% kable()
+```
+
+6259 cars have 0£ on tax, and only 3065 cars are electric or hybrid. This can be a mistake because cars in UK payed tax for CO2 rejections.
+
+\vspace{1cm}
+
+```{r, echo=FALSE}
+cars %>% ggplot(aes(x = tax)) +
+  geom_histogram(binwidth = 10) +
+  labs(title = "Histogram of tax", x = "tax in £") +
+  theme_minimal()
+```
+
+\newpage
+
+**Summary of mpg**
+
+```{r, echo=FALSE}
+summary(cars$mpg)
+```
+
+\vspace{1cm}
+
+```{r, echo=FALSE}
+cars %>% ggplot(aes(x = mpg)) +
+  geom_histogram(binwidth = 30) +
+  labs(title = "Histogram of mpg", x = "mile per gallon") +
+  theme_minimal()
+```
+
+\newpage
+
+**Summary of engineSize and total number of cars with small engineSize**
+
+```{r, echo=FALSE}
+summary(cars$engineSize)
+table(cars$engineSize) %>% head() %>% kable()
+```
+
+\vspace{0.5cm}
+
+273 vehicles have engine size = 0.\
+The assumption is electrical vehicles have enginSize = 0
+
+```{r, echo=FALSE}
+cars %>% filter(fuelType == "Electric") %>%
+  kable()
+```
+
+But only 2 of 6 electrical cars have engine size = 0, others are not.\
+We replace all non-electric cars by the median. The median engineSize is 1.6 liter.
+
+\vspace{1cm}
+
+```{r echo=FALSE, message=FALSE}
+cars %>% ggplot(aes(engineSize)) +
+  geom_histogram() +
+  labs(title = "Histogram of engineSize") +
+  theme_minimal()
+```
+
+\vspace{1cm}
+
+Most vehicles have less than 1; 1.6; 2; or 2.5 liter.
+
+## Exploratory Data Analysis
+
+### Search price correlation
+
+\vspace{1cm}
+
+```{r, echo=FALSE}
+cars %>% filter(price < 50000) %>%
+  ggplot(aes(brand, price, color = brand)) + 
+  geom_boxplot() +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 70, hjust = 0.85, size = 8),
+        legend.position = "none") +
+  ggtitle("Price per brand")
+```
+
+\vspace{1cm}
+
+Some brand are more expensive in general.
+
+```{r echo=FALSE, fig.height=4, message=FALSE}
+cars %>%  filter(price < 50000) %>%
+  mutate(year = as.factor(year)) %>%
+  ggplot(aes(year, price)) +
+  geom_boxplot() + 
+  theme_minimal() +
+  ggtitle("Price per year") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.85, size = 8))
+  
+
+cars %>% ggplot(aes(year, price)) +
+  geom_smooth() +
+  theme_minimal()
+```
+
+There is an obvious trend of price per year.
+
+\newpage
+
+```{r echo=FALSE, fig.height=3}
+cars %>%  filter(price < 50000) %>%
+  ggplot(aes(transmission, price)) +
+  geom_boxplot() +
+  labs(title = "Price per transmission", x = "") +
+  theme_minimal()
+```
+
+```{r echo=FALSE, fig.height=5}
+cars %>% filter(price < 50000) %>% 
+  select(brand, price, transmission) %>% 
+  ggplot(aes(x = brand, y = price, color = transmission)) +
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle("Price per brand per transmission") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 0.85, size = 8))
+```
+
+Generally, Automatic and Semi-Auto transmission are more expensive than Manual.
+
+\newpage
+
+```{r echo=FALSE, message=FALSE}
+cars %>% ggplot(aes(mileage, price)) + 
+  geom_smooth() +
+  ggtitle("Price per mileage") +
+  theme_minimal()
+```
+
+\vspace{1cm}
+
+There is an inverse trend between mileage and price.
+
+\newpage
+
+```{r echo=FALSE, fig.height=3}
+cars %>% filter(price < 50000) %>%
+  ggplot(aes(fuelType, price)) +
+  geom_boxplot() +
+  labs(title = "Price per fuelType", x= "") +
+  theme_minimal()
+```
+
+```{r echo=FALSE, fig.height=5}
+cars %>% filter(price < 50000) %>%
+  ggplot(aes(brand, price, color = fuelType)) +
+  geom_boxplot() +
+  theme_minimal() +
+  ggtitle("Price per brand per fuel type") +
+  theme(axis.text.x = element_text(angle = 70, hjust = 0.85, size = 8))
+```
+
+Petrol is less expensive than Diesel. But Mercedes and BMW are exceptions.
+
+\newpage
+
+```{r echo=FALSE, message=FALSE}
+cars %>% ggplot(aes(tax, price)) +
+  geom_smooth() +
+  ggtitle("Price per tax") +
+  theme_minimal()
+```
+
+\newpage
+
+```{r echo=FALSE, fig.height=4, message=FALSE}
+cars %>% ggplot(aes(mpg, price)) + 
+  geom_smooth() +
+  ggtitle("Price per mpg") +
+  theme_minimal()
+```
+
+```{r echo=FALSE, fig.height=4, message=FALSE}
+cars %>% ggplot(aes(engineSize, price)) + 
+  geom_point() + 
+  geom_smooth() +
+  ggtitle(label = "Price per engineSize") +
+  theme_minimal()
+```
+
+\newpage
+
+### Corrplot
+
+```{r, echo=FALSE}
+options(repr.plot.width = 10, repr.plot.height = 8)
+corrplot(cars %>% select(where(is.numeric)) %>% 
+           cor(), method = "number")
+```
+
+\vspace{1cm}
+
+We will use most correlated variables to build a machine learning model step-by-step.
+
+\newpage
+
+# Results
+
+## Data preparation for a step-by-step approch
+
+We add a column of mile_interval depending on mileage quartile from 1 to 4.
+
+```{r, echo=FALSE}
+cars <- cars %>% mutate(.after = "mileage", mile_interval =
+                  case_when(mileage <= 7414 ~ 1,
+                            mileage > 7414 & mileage <= 17444 ~ 2,
+                            mileage > 17444 & mileage <= 32300 ~ 3,
+                            mileage > 32300 ~ 4))
+```
+
+```{r echo=FALSE, message=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+```
+
+After that, we split cars data set to train_set and test_set. test_set will be 20% of cars.
+
+```{r, echo=FALSE}
+cars <- cars %>% as.data.frame()
+test_index <- createDataPartition(y = cars$price, times = 1, p = 0.2,
+                                list = FALSE)
+train_set <- cars[-test_index, ] # 77960 rows
+test_set <- cars[test_index, ] # 19491 rows
+```
+
+\vspace{0.5cm}
+
+**Make sure car's model in test_set are also in train_set**
+
+```{r, echo=FALSE}
+test_set %>% anti_join(train_set, by = "model") %>%
+  kable() # 1 entries
+removed <- test_set %>% anti_join(train_set, by = "model")
+```
+
+Remove this entry from test_set.
+
+```{r, echo=FALSE, include=FALSE}
+test_set <- test_set %>% semi_join(train_set, by = "model")
+dim(test_set) # 19490 rows
+```
+
+And add it to train_set.
+
+```{r echo=FALSE, include=FALSE}
+train_set <- rbind(train_set, removed)
+dim(train_set) # 77961
+
+rm(removed)
+```
+
+```{r, echo=FALSE}
+RMSE <- function(true_price, predicted_price){
+  sqrt(mean((true_price - predicted_price)^2))
+}
+```
+
+## First model
+
+```{r, echo=FALSE, include=FALSE}
+mu <- mean(train_set$price)
+mu
+```
+
+If we predicted all cars with the mean. The RMSE will be :
+
+```{r echo=FALSE, include=FALSE}
+naive_rmse <- RMSE(true_price = test_set$price, predicted_price = mu)
+naive_rmse
+```
+
+```{r, echo=FALSE}
+results <- tibble(method = "just the average", rmse = naive_rmse)
+results %>% kable
+rm(naive_rmse)
+```
+
+**model effect**
+
+```{r, echo=FALSE}
+model_avg <- train_set %>%
+  group_by(model) %>%
+  summarise(b_model = mean(price - mu))
+
+predicted_price <- test_set %>%
+  left_join(model_avg, by = "model") %>%
+  mutate(pred = mu + b_model) %>%
+  pull(pred)
+```
+
+If we group_by model after using "just the average" for predicting.
+
+```{r, echo=FALSE}
+model_effect <- RMSE(test_set$price, predicted_price)
+results <- results %>% add_row(method = "model_effect", 
+                               rmse = model_effect)
+results %>% kable()
+rm(model_effect)
+```
+
+**year effect**\
+
+If we group_by year after using "just the average" and model for predicting.
+
+```{r, echo=FALSE}
+year_avg <- train_set %>%
+  left_join(model_avg, by = "model") %>%
+  group_by(year) %>%
+  summarise(b_year = mean(price - mu - b_model))
+
+predicted_price <- test_set %>%
+  left_join(model_avg, by = "model") %>%
+  left_join(year_avg, by = "year") %>%
+  mutate(pred = mu + b_model + b_year) %>%
+  pull(pred)
+
+year_effect <- RMSE(test_set$price, predicted_price)
+results <- results %>% add_row(method = "year_effect", 
+                               rmse = year_effect)
+results %>% kable()
+rm(year_effect)
+```
+
+**engineSize effect**\
+
+If we group_by engineSize after using "just the average", model and year for predicting.
+
+```{r, echo=FALSE}
+engineSize_avg <- train_set %>%
+  left_join(model_avg, by = "model") %>%
+  left_join(year_avg, by = "year") %>%
+  group_by(engineSize) %>%
+  summarise(b_engine = mean(price - mu - b_model - b_year))
+
+predicted_price <- test_set %>%
+  left_join(model_avg, by = "model") %>%
+  left_join(year_avg, by = "year") %>%
+  left_join(engineSize_avg, by = "engineSize") %>%
+  mutate(b_engine = ifelse(!is.na(b_engine), b_engine, 0)) %>%
+  mutate(pred = mu + b_model + b_year + b_engine) %>%
+  pull(pred)
+
+engineSize_effect <- RMSE(test_set$price, predicted_price)
+results <- results %>% add_row(method = "engineSize_effect", 
+                               rmse = engineSize_effect)
+results %>% kable()
+rm(engineSize_effect)
+```
+
+**mile_interval effect**\
+
+If we group_by mile_interval after using "just the average", model, year and engineSize for predicting.
+
+```{r, echo=FALSE}
+mile_interval_avg <- train_set %>%
+  left_join(model_avg, by = "model") %>%
+  left_join(year_avg, by = "year") %>%
+  left_join(engineSize_avg, by = "engineSize") %>%
+  group_by(mile_interval) %>%
+  summarise(b_mile_interval = mean(price - mu - b_model - b_year - b_engine))
+
+predicted_price <- test_set %>%
+  left_join(model_avg, by = "model") %>%
+  left_join(year_avg, by = "year") %>%
+  left_join(engineSize_avg, by = "engineSize") %>%
+  mutate(b_engine = ifelse(!is.na(b_engine), b_engine, 0)) %>%
+  left_join(mile_interval_avg, by = "mile_interval") %>%
+  mutate(pred = mu + b_model + b_year + b_engine + b_mile_interval) %>%
+  pull(pred)
+
+mile_interval_effect <- RMSE(test_set$price, predicted_price)
+results <- results %>% add_row(method = "mile_interval_effect", 
+                               rmse = mile_interval_effect)
+results %>% kable()
+rm(mile_interval_effect)
+```
+
+```{r, echo=FALSE}
+rm(mu, model_avg, year_avg, engineSize_avg, mile_interval_avg, predicted_price)
+rm(test_index, test_set, train_set)
+```
+
+\newpage
+
+## Data processing
+
+We modify the structure of the data to accurate next machine learning models.\
+Numeric columns :
+
+```{r, echo=FALSE}
+cars <- cars %>% select(-c(brand, mile_interval))
+numeric_vars <- cars %>%
+  select(where(is.numeric)) %>% names()
+numeric_vars
+```
+
+### Transform categorical variables to binary
+
+We add 4 columns for transmission :
+
+```{r, echo=FALSE}
+cars <- cars %>%
+  mutate(value = rep(1, nrow(cars))) %>%  
+  spread(key = transmission, value = value, fill = 0)
+cars %>% colnames()
+```
+
+\vspace{0.5cm}
+
+We add 5 columns for FuelType :
+
+```{r, echo=FALSE}
+cars <- cars %>%
+  mutate(value = rep(1, nrow(cars))) %>%  
+  spread(key = fuelType, value = value, fill = 0) 
+cars %>% colnames()
+```
+
+\vspace{0.5cm}
+
+And we add 186 columns for model. It can make execution slower.
+
+```{r, echo=FALSE, include=FALSE}
+cars <- cars %>%
+  mutate(value = rep(1, nrow(cars))) %>%  
+  spread(key = model, value = value, fill = 0) 
+cars %>% colnames()
+```
+
+### Scale continuous variables
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+cars <- cars %>% mutate_at(numeric_vars[numeric_vars != "price"],
+                                     .funs = scale)
+cars %>% select(numeric_vars) %>% head()
+rm(numeric_vars)
+```
+
+```{r, echo=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+```
+
+```{r, echo=FALSE}
+test_index <- createDataPartition(y = cars$price, times = 1, p = 0.2,
+                                  list = FALSE)
+train_set <- cars[-test_index, ] # 77911 rows
+test_set <- cars[test_index, ] # 19480 rows
+rm(test_index)
+```
+
+\newpage
+
+## Linear model with caret
+
+We will train the model. It take 3 minutes to execute !
+
+```{r echo=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+train_lm <- train(price ~ ., method = "lm", data = train_set)
+```
+
+Then predict the outcomes.
+
+```{r echo=FALSE, warning=FALSE}
+lm_prediction <- predict(train_lm, newdata = test_set)
+```
+
+And finally calculate RMSE.
+
+```{r, echo=FALSE}
+lm_rmse <- RMSE(test_set$price, lm_prediction)
+results <- results %>% add_row(method = "lm", 
+                               rmse = lm_rmse)
+results %>% kable()
+rm(train_lm, lm_prediction, lm_rmse)
+```
+
+Until now, linear model is more accurate than all previous.
+
+\vspace{0.5cm}
+
+## rpart model
+
+We will train the model.
+
+```{r, echo=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+x_train <- train_set %>% select(-price)
+y_train <- train_set$price
+train_rpart <- train(x_train, y_train, method = "rpart")
+```
+
+Then predict the outcomes.
+
+```{r, echo=FALSE}
+rpart_prediction <- predict(train_rpart, newdata = test_set[-2])
+```
+
+And finally calculate RMSE.
+
+```{r, echo=FALSE}
+rpart_rmse <- RMSE(test_set$price, rpart_prediction)
+results <- results %>% add_row(method = "rpart", 
+                               rmse = rpart_rmse)
+results %>% kable()
+rm(x_train, y_train, train_rpart, rpart_prediction, rpart_rmse)
+```
+
+rpart looks doesn't work good.
+
+\newpage
+
+## random forest
+
+Another time, We will train the model. It take about 7 minutes !!
+
+```{r, echo=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+train_control <- trainControl(method = "repeatedcv", number = 5,
+                              repeats = 5, p = 0.75)
+grid <- expand.grid(.mtry = 1:5)
+
+train_forest <- train(price ~ ., method = "rf", data = train_set,
+                     trControl = train_control,
+                     tuneGrid = grid,
+                     nodesize = 10,
+                     ntree = 5)
+```
+
+Then predict the outcomes.
+
+```{r, echo=FALSE}
+forest_prediction <- predict(train_forest, newdata = test_set)
+```
+
+And calculate RMSE.
+
+```{r, echo=FALSE}
+forest_rmse <- RMSE(test_set$price, forest_prediction)
+results <- results %>% add_row(method = "random_forest", 
+                               rmse = forest_rmse)
+results %>% kable()
+plot(forest_prediction, test_set$price)
+rm(grid, train_control, train_forest, forest_prediction, forest_rmse)
+```
+
+\newpage
+
+## xgboost
+
+We will train the model.
+
+```{r, echo=FALSE, include=FALSE}
+set.seed(2021, sample.kind = "Rounding")
+x_train <- train_set %>% select(-price) %>%
+  data.matrix()
+y_train <- train_set$price
+
+x_test <- test_set %>% select(-price) %>%
+  data.matrix()
+y_test <- test_set$price
+
+train_xgb <- xgb.DMatrix(data = x_train, label = y_train)
+test_xgb <- xgb.DMatrix(data = x_test, label = y_test)
+
+watch_list <- list(train = train_xgb, test = test_xgb)
+
+set.seed(2021, sample.kind = "Rounding")
+model = xgb.train(data = train_xgb, max.depth = 8, watchlist = watch_list,
+                  nrounds = 100)
+
+final = xgboost(data = train_xgb, max.depth = 8, nrounds = 100)
+```
+
+Then predict the outcomes.
+
+```{r, echo=FALSE}
+xgb_predictions <- predict(final, data.matrix(x_test))
+```
+
+And finally calculate RMSE (the Root Mean Square Error).
+
+```{r, echo=FALSE}
+xgb_rmse <- RMSE(xgb_predictions, y_test)
+results <- results %>% add_row(method = "xgboost", 
+                               rmse = xgb_rmse)
+results %>% kable()
+plot(xgb_predictions, y_test)
+```
+
+\newpage
+
+# Conclusion
+
+xgboost is the most accurate, let's compare true_price ans predicted_price :
+
+```{r, echo=FALSE}
+compare <- tibble(true_price = test_set$price, 
+                  predicted_price = round(xgb_predictions, digits = 0),
+                  absolute_difference = abs(true_price - predicted_price))
+
+compare %>% head(15) %>% kable()
+compare %>% tail(15) %>% kable()
+
+rm(test_xgb, train_xgb, xgb_predictions, xgb_rmse, y_test, y_train)
+```
+
+The hope is to find info such as when is the ideal time to sell certain cars (i.e. at what age and mileage are there significant drops in resale value).
