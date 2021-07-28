@@ -68,10 +68,10 @@ file.remove("audi.csv", "bmw.csv", "merc.csv", "ford.csv", "hyundi.csv",
 dim(cars) # 98926 rows and 10 variables
 
 # search for duplicated rows
-sum(duplicated(cars)) # 1475 rows are duplicated
+sum(duplicated(cars))
 
 # remove duplicated rows
-cars <- cars %>% distinct() # 97451
+cars <- cars %>% distinct() 
 
 # look for NAs
 sapply(cars, function(i){
@@ -81,7 +81,9 @@ sapply(cars, function(i){
 str(cars)
 head(cars)
 
-# brand
+# Exploratory Data Analysis ####
+
+## brand ####
 cars %>% summarise(unique(brand))
 # there are 9 brands
 
@@ -96,7 +98,7 @@ cars %>% group_by(brand) %>% summarise(n= n()) %>%
   guides(fill = "none") +
   labs(x = "")
 
-# model ####
+## model ####
 cars %>% summarise(unique(model)) %>% count()
 # there are 186 models
 
@@ -112,7 +114,7 @@ cars %>% ggplot(aes(x = model, y = price, fill = brand)) +
   geom_boxplot() +
   theme(axis.text.x = element_text(angle = 90, hjust = 0.85, size = 6))
 
-# year ####
+## year ####
 summary(cars$year)
 # there is a max value of 2060 in variable "year" for a Ford Fiesta
 
@@ -157,17 +159,7 @@ cars %>% group_by(year) %>% summarise(n = n()) %>%
   ggplot(aes(x = year, y = n)) +
   geom_bar(stat = "identity")
 
-# price ####
-summary(cars$price)
-cars %>% ggplot(aes(x = price)) +
-  geom_histogram(color = "black")
-# very few cars have price > 50000
-
-cars %>% filter(price > 50000) %>% summarise(n()) # roughly 1% of all vehicles
-cars %>% filter(price < 50000) %>%
-  ggplot(aes(y = price)) + geom_boxplot()
-
-# transmission ####
+## transmission ####
 table(cars$transmission)
 cars %>% filter(transmission == "Other")
 
@@ -178,14 +170,14 @@ cars %>% group_by(transmission) %>% summarise(n = n()) %>%
   guides(fill = "none") +
   labs(title = "Transmission", x = "")
 
-# mile_age ####
+## mile_age ####
 summary(cars$mileage)
 
 # plot of mileage distribution
 cars %>% ggplot(aes(x = mileage)) +
   geom_area(stat = "bin")
 
-# fuelType ####
+## fuelType ####
 table(cars$fuelType)
 
 cars %>% group_by(fuelType) %>% summarise(n = n()) %>%
@@ -194,7 +186,7 @@ cars %>% group_by(fuelType) %>% summarise(n = n()) %>%
   guides(fill = "none") +
   labs(title = "Fuel type", x = "")
 
-# tax ####
+## tax ####
 summary(cars$tax)
 table(cars$tax)
 
@@ -202,7 +194,7 @@ table(cars$tax)
 cars %>% ggplot(aes(x = tax)) +
   geom_histogram(binwidth = 10)
 
-# mpg ####
+## mpg ####
 summary(cars$mpg)
 table(cars$mpg)
 
@@ -210,7 +202,7 @@ table(cars$mpg)
 cars %>% ggplot(aes(x = mpg)) +
   geom_histogram(binwidth = 30)
 
-# engineSize ####
+## engineSize ####
 summary(cars$engineSize)
 table(cars$engineSize) # 273 vehicles have engine size = 0
 
@@ -230,8 +222,18 @@ cars %>% ggplot(aes(engineSize)) +
   geom_histogram()
 # most vehicles have less than 1 or 1.6 or 2 or 2.5
 
-# EDA ####
-# search for price correlation
+## price ####
+summary(cars$price)
+cars %>% ggplot(aes(x = price)) +
+  geom_histogram(color = "black")
+# very few cars have price > 50000
+
+cars %>% filter(price > 50000) %>% summarise(n()) # roughly 1% of all vehicles
+cars %>% filter(price < 50000) %>%
+  ggplot(aes(y = price)) + geom_boxplot()
+
+
+## search for price correlation ####
 # with brand
 cars %>% filter(price < 50000) %>%
   ggplot(aes(brand, price, color = brand)) + 
@@ -292,28 +294,31 @@ cars <- cars %>% mutate(.after = "mileage", mile_interval =
                             mileage > 17444 & mileage <= 32300 ~ 3,
                             mileage > 32300 ~ 4))
 
-# corrplot ####
+# corrplot 
 options(repr.plot.width = 10, repr.plot.height = 8)
 corrplot(cars %>% select(where(is.numeric)) %>% 
            cor(), method = "number")
 
-# data preparation for step-by-step approch ####
-set.seed(2021, sample.kind = "Rounding")
+# data preparation for step-by-step approach ####
+
 
 # test set will be 20% of cars data
 cars <- cars %>% as.data.frame()
+
+set.seed(2021, sample.kind = "Rounding")
+
 test_index <- createDataPartition(y = cars$price, times = 1, p = 0.2,
                                 list = FALSE)
-train_set <- cars[-test_index, ] # 77960 rows
-test_set <- cars[test_index, ] # 19491 rows
+train_set <- cars[-test_index, ] 
+test_set <- cars[test_index, ] 
 
 # make sure models in test set are also in training set
-test_set %>% anti_join(train_set, by = "model") # 1 entries
+test_set %>% anti_join(train_set, by = "model") 
 removed <- test_set %>% anti_join(train_set, by = "model")
 
 # remove these 4 entries from test set
 test_set <- test_set %>% semi_join(train_set, by = "model")
-dim(test_set) # 19490 rows
+dim(test_set)
 
 # and add its to training set
 train_set <- rbind(train_set, removed)
@@ -321,13 +326,14 @@ dim(train_set) # 77961
 
 rm(removed)
 
-# machine learning ####
+# First model building ####
 # RMSE
 RMSE <- function(true_price, predicted_price){
   sqrt(mean((true_price - predicted_price)^2))
 }
 
-# first model
+## naive model
+
 mu <- mean(train_set$price)
 mu
 
@@ -339,7 +345,7 @@ results <- tibble(method = "Just the average", rmse = naive_rmse)
 results
 rm(naive_rmse)
 
-# model effect
+## model effect
 model_avg <- train_set %>%
   group_by(model) %>%
   summarise(b_model = mean(price - mu))
@@ -355,7 +361,7 @@ results <- results %>% add_row(method = "model_effect",
 results
 rm(model_effect)
 
-# year effect
+## year effect
 year_avg <- train_set %>%
   left_join(model_avg, by = "model") %>%
   group_by(year) %>%
@@ -373,7 +379,7 @@ results <- results %>% add_row(method = "year_effect",
 results
 rm(year_effect)
 
-# engine size effect
+## engine size effect
 engineSize_avg <- train_set %>%
   left_join(model_avg, by = "model") %>%
   left_join(year_avg, by = "year") %>%
@@ -394,7 +400,7 @@ results <- results %>% add_row(method = "engineSize_effect",
 results
 rm(engineSize_effect)
 
-# mile_interval effect
+## mile_interval effect
 mile_interval_avg <- train_set %>%
   left_join(model_avg, by = "model") %>%
   left_join(year_avg, by = "year") %>%
@@ -421,14 +427,14 @@ rm(mile_interval_effect)
 rm(mu, model_avg, year_avg, engineSize_avg, mile_interval_avg, predicted_price)
 rm(test_index, test_set, train_set)
 
-# data processing ####
+# data processing for other models ####
 # numeric columns
 cars <- cars %>% select(-c(brand, mile_interval))
 numeric_vars <- cars %>%
   select(where(is.numeric)) %>% names()
 numeric_vars
 
-# categorical variables to binary ####
+# categorical variables to binary 
 # transmission
 cars <- cars %>%
   mutate(value = rep(1, nrow(cars))) %>%  
@@ -449,22 +455,22 @@ cars <- cars %>% mutate_at(numeric_vars[numeric_vars != "price"],
                                      .funs = scale)
 rm(numeric_vars)
 
-set.seed(2021, sample.kind = "Rounding")
 
 # test set will be 20% of cars data
+set.seed(2021, sample.kind = "Rounding")
 test_index <- createDataPartition(y = cars$price, times = 1, p = 0.2,
                                   list = FALSE)
-train_set <- cars[-test_index, ] # 77911 rows
-test_set <- cars[test_index, ] # 19480 rows
+train_set <- cars[-test_index, ] 
+test_set <- cars[test_index, ] 
 rm(test_index)
 
 # linear model with caret ####
 # train the model
 set.seed(2021, sample.kind = "Rounding")
-train_lm <- train(price ~ ., method = "lm", data = train_set) # 3 minutes time
+train_lm <- train(price ~ ., method = "lm", data = train_set[, 1:6]) # 3 minutes time
 
 # predict the outcomes
-lm_prediction <- predict(train_lm, newdata = test_set)
+lm_prediction <- predict(train_lm, newdata = test_set[, 1:6])
 
 # RMSE
 lm_rmse <- RMSE(test_set$price, lm_prediction)
@@ -475,9 +481,10 @@ rm(train_lm, lm_prediction, lm_rmse)
 
 # rpart model ####
 # train the model
-set.seed(2021, sample.kind = "Rounding")
+
 x_train <- train_set %>% select(-price)
 y_train <- train_set$price
+set.seed(2021, sample.kind = "Rounding")
 train_rpart <- train(x_train, y_train, method = "rpart")
 
 # predict the outcomes
@@ -516,7 +523,7 @@ rm(grid, train_control, train_forest, forest_prediction, forest_rmse)
 
 # xgboost ####
 # train the model
-set.seed(2021, sample.kind = "Rounding")
+
 x_train <- train_set %>% select(-price) %>%
   data.matrix()
 y_train <- train_set$price
@@ -554,10 +561,6 @@ compare <- tibble(true_price = test_set$price,
 fwrite(compare, "compare.csv")
 
 rm(test_xgb, train_xgb, xgb_predictions, xgb_rmse, y_test, y_train)
-
-
-
-
 
 
 
